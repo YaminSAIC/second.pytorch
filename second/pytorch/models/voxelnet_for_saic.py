@@ -3,6 +3,7 @@ from .voxelnet import _get_pos_neg_loss
 from .pointpillars_for_offical_onnx_and_cuda import PillarFeatureNetForCudaImplementation, \
     PointPillarsScatterForCudaImpmentation
 
+
 class RPNForCudaImplementaion(nn.Module):
     def __init__(self,
                  use_norm=True,

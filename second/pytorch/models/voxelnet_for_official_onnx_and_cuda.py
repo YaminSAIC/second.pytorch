@@ -631,6 +631,16 @@ class VoxelNetForCudaImplementation(nn.Module):
                     "image_idx": img_idx,
                 }
 
+                print(
+                    "bbox", box_2d_preds.shape,
+                    "box3d_camera", final_box_preds_camera.shape,
+                    "box3d_lidar", final_box_preds.shape,
+                    "scores", final_scores.shape,
+                    "label_preds", label_preds.shape,
+                    "image_idx", img_idx.shape,
+                )
+                exit()
+
             else:
                 predictions_dict = {
                     "bbox": None,
