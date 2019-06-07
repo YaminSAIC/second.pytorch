@@ -18,8 +18,7 @@
 from second.protos import second_pb2
 from second.pytorch.builder import losses_builder
 from second.pytorch.models.voxelnet import LossNormType, VoxelNet
-from second.pytorch.models.voxelnet_for_official_onnx_and_cuda_saic_data_and_prep \
-    import VoxelNetForCudaImplementation
+from second.pytorch.models.voxelnet_for_saic import VoxelNetForCudaImplementation
 
 
 def build(model_cfg: second_pb2.VoxelNet, voxel_generator,

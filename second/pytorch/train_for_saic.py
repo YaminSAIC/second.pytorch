@@ -23,7 +23,7 @@ from second.utils.eval import get_coco_eval_result, get_official_eval_result
 from second.utils.progress_bar import ProgressBar
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 from second.pytorch.utils import get_paddings_indicator
-from second.pytorch.builder import second_builder_for_official_onnx_and_cuda
+from second.pytorch.builder import second_builder_for_saic
 
 
 def _predict_kitti_to_file(net,
@@ -295,7 +295,7 @@ def train_for_official_onnx_and_cuda(
     ######################
     # second is built with batchsize
     center_limit_range = model_cfg.post_center_limit_range
-    net = second_builder_for_official_onnx_and_cuda.build(model_cfg, voxel_generator, target_assigner)
+    net = second_builder_for_saic.build(model_cfg, voxel_generator, target_assigner)
     net.cuda()
     # net_train = torch.nn.DataParallel(net).cuda()
     # print("num_trainable parameters:", len(list(net.parameters())))
@@ -338,13 +338,16 @@ def train_for_official_onnx_and_cuda(
         model_cfg,
         training=True,
         voxel_generator=voxel_generator,
-        target_assigner=target_assigner)
+        target_assigner=target_assigner,
+        kitti_prep=False)
+
     eval_dataset = input_reader_builder.build(
         eval_input_cfg,
         model_cfg,
         training=False,
         voxel_generator=voxel_generator,
-        target_assigner=target_assigner)
+        target_assigner=target_assigner,
+        kitti_prep=False)
 
     def _worker_init_fn(worker_id):
         time_seed = np.array(time.time(), dtype=np.int32)
@@ -576,6 +579,7 @@ def train_for_official_onnx_and_cuda(
                     pickle.dump(dt_annos, f)
             writer.add_text('eval_result', result, global_step)
             net.train()
+
     except Exception as e:
         torchplus.train.save_models(model_dir, [net, optimizer],
                                     net.get_global_step())
@@ -625,7 +629,7 @@ def evaluate_for_cuda_implementation(config_path,
                                                     bv_range, box_coder)
 
     # net = second_builder.build(model_cfg, voxel_generator, target_assigner)
-    net = second_builder_for_official_onnx_and_cuda.build(model_cfg, voxel_generator, target_assigner)
+    net = second_builder_for_saic.build(model_cfg, voxel_generator, target_assigner)
     net.cuda()
     if train_cfg.enable_mixed_precision:
         net.half()
@@ -702,13 +706,13 @@ def predict_kitti_to_anno(net,
                           center_limit_range=None,
                           lidar_input=False,
                           global_set=None):
-    batch_image_shape = example['image_shape']
+    # batch_image_shape = example['image_shape']
     batch_imgidx = example['image_idx']
     predictions_dicts = net(example)
     # t = time.time()
     annos = []
     for i, preds_dict in enumerate(predictions_dicts):
-        image_shape = batch_image_shape[i]
+        # image_shape = batch_image_shape[i]
         img_idx = preds_dict["image_idx"]
         if preds_dict["bbox"] is not None:
             box_2d_preds = preds_dict["bbox"].detach().cpu().numpy()
@@ -723,24 +727,28 @@ def predict_kitti_to_anno(net,
             for box, box_lidar, bbox, score, label in zip(
                     box_preds, box_preds_lidar, box_2d_preds, scores,
                     label_preds):
+                '''
                 if not lidar_input:
                     if bbox[0] > image_shape[1] or bbox[1] > image_shape[0]:
                         continue
                     if bbox[2] < 0 or bbox[3] < 0:
                         continue
                 # print(img_shape)
+                '''
                 if center_limit_range is not None:
                     limit_range = np.array(center_limit_range)
                     if (np.any(box_lidar[:3] < limit_range[:3])
                             or np.any(box_lidar[:3] > limit_range[3:])):
                         continue
-                bbox[2:] = np.minimum(bbox[2:], image_shape[::-1])
-                bbox[:2] = np.maximum(bbox[:2], [0, 0])
+                # bbox[2:] = np.minimum(bbox[2:], image_shape[::-1])
+                # bbox[:2] = np.maximum(bbox[:2], [0, 0])
                 anno["name"].append(class_names[int(label)])
+
                 anno["truncated"].append(0.0)
                 anno["occluded"].append(0)
                 anno["alpha"].append(-np.arctan2(-box_lidar[1], box_lidar[0]) +
                                      box[6])
+
                 anno["bbox"].append(bbox)
                 anno["dimensions"].append(box[3:6])
                 anno["location"].append(box[:3])
