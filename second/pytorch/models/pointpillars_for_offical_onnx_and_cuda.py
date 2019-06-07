@@ -11,25 +11,23 @@ from torch.nn import functional as F
 from second.pytorch.utils import get_paddings_indicator
 from torchplus.nn import Empty
 from torchplus.tools import change_default_args
+from .pointpillars import PFNLayer
 
 
-# PFNLayer多个拼在一起就是PFN
-class PFNLayer(nn.Module):
+class PFNLayerForCudaImplementation(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
                  use_norm=True,
                  last_layer=False):
         """
-        Pillar Feature Net Layer.
-        The Pillar Feature Net could be composed of a series of these layers, but the PointPillars paper results only
-        used a single PFNLayer. This layer performs a similar role as second.pytorch.voxelnet.VFELayer.
+        Pillar Feature Net Layer. Add batch size to fit tensorrt
+        Modified batchnorm 1d -> 2d to fit tensorrt
         :param in_channels: <int>. Number of input channels.
         :param out_channels: <int>. Number of output channels.
         :param use_norm: <bool>. Whether to include BatchNorm.
         :param last_layer: <bool>. If last_layer, there is no concatenation of features.
         """
-
         super().__init__()
         self.name = 'PFNLayer'
         self.last_vfe = last_layer
@@ -38,36 +36,37 @@ class PFNLayer(nn.Module):
         self.units = out_channels
 
         if use_norm:
-            BatchNorm1d = change_default_args(eps=1e-3, momentum=0.01)(nn.BatchNorm1d)
-            Linear = change_default_args(bias=False)(nn.Linear)
+            # Have to use BatchNorm2d since 1d, 1, 1200000, 64 , 1200000is too long
+            BatchNorm1d = change_default_args(eps=1e-3, momentum=0.01)(nn.BatchNorm2d)
+            # Linear = change_default_args(bias=False)(nn.Linear)
+            Conv = change_default_args(bias=False)(nn.Conv2d)
         else:
             BatchNorm1d = Empty
-            Linear = change_default_args(bias=True)(nn.Linear)
+            # Linear = change_default_args(bias=True)(nn.Linear)
+            Conv = change_default_args(bias=False)(nn.Conv2d)
 
-        self.linear = Linear(in_channels, self.units)
         self.norm = BatchNorm1d(self.units)
+        self.conv = Conv(in_channels, self.units, 1)
+        # replace max
+        self.dilaconv = Conv(self.units, self.units, (1, 34), dilation=(1, 3))
 
     def forward(self, inputs):
-
-        x = self.linear(inputs)
-        # 0 is batch, 1 is point index, 2 is point features permute就是transpose
-        # 两次transpose相当于没变为什么要continuous不明 transpose之后存储空间的连续性被打破
-        x = self.norm(x.permute(0, 2, 1).contiguous()).permute(0, 2, 1).contiguous()
+        # ############# the conversion is obeying the rule:
+        ############### tensorrt is not supporting much of indexing, broadcasting, and wired batching
+        # the following struct
+        # (1, 12000, 100, 4)
+        x = self.conv(inputs)
+        x = self.norm(x)
         x = F.relu(x)
-        # element wise max pool same as voxelnet
-        x_max = torch.max(x, dim=1, keepdim=True)[0]
-        
-        
+        # replace max to dilated conv
+        # x_max = torch.max(x, dim=1, keepdim=True)[0]
+
+        x_max = self.dilaconv(x)
         if self.last_vfe:
             return x_max
-        else:
-            # 每一层多学一个长度。。。比以前少了很多计算。
-            x_repeat = x_max.repeat(1, inputs.shape[1], 1)
-            x_concatenated = torch.cat([x, x_repeat], dim=2)
-            return x_concatenated
 
 
-class PillarFeatureNet(nn.Module):
+class PillarFeatureNetForCudaImplementation(nn.Module):
     def __init__(self,
                  num_input_features=4,
                  use_norm=True,
@@ -76,9 +75,7 @@ class PillarFeatureNet(nn.Module):
                  voxel_size=(0.2, 0.2, 4),
                  pc_range=(0, -40, -3, 70.4, 40, 1)):
         """
-        Pillar Feature Net.
-        The network prepares the pillar features and performs forward pass through PFNLayers. This net performs a
-        similar role to SECOND's second.pytorch.voxelnet.VoxelFeatureExtractor.
+        Modified Pillar Feature Net to match the c++ codes.
         :param num_input_features: <int>. Number of input features, either x, y, z or x, y, z, r.
         :param use_norm: <bool>. Whether to include BatchNorm.
         :param num_filters: (<int>: N). Number of features in each of the N PFNLayers.
@@ -105,7 +102,7 @@ class PillarFeatureNet(nn.Module):
                 last_layer = False
             else:
                 last_layer = True
-            pfn_layers.append(PFNLayer(in_filters, out_filters, use_norm, last_layer=last_layer))
+            pfn_layers.append(PFNLayerForCudaImplementation(in_filters, out_filters, use_norm, last_layer=last_layer))
         self.pfn_layers = nn.ModuleList(pfn_layers)
 
         # Need pillar (voxel) size and x/y offset in order to calculate pillar offset
@@ -114,47 +111,69 @@ class PillarFeatureNet(nn.Module):
         self.x_offset = self.vx / 2 + pc_range[0]
         self.y_offset = self.vy / 2 + pc_range[1]
 
-    def forward(self, features, num_voxels, coors):
+    def forward(self,
+                dev_pillar_x_, dev_pillar_y_, dev_pillar_z_, dev_pillar_i_,
+                dev_num_points_per_pillar_, dev_x_coors_for_sub_shaped_, dev_y_coors_for_sub_shaped_,
+                dev_pillar_feature_mask_):
+        """
+        The c++ code inputs
+        :param dev_pillar_x_: (2, 1, 12000, 100)
+        :param dev_pillar_y_: (2, 1, 12000, 100)
+        :param dev_pillar_z_: (2, 1, 12000, 100)
+        :param dev_pillar_i_: (2, 1, 12000, 100)
+        :param dev_num_points_per_pillar_: num_voxels in pytorch code, (2, 1, 12000), the only one without 100
+        :param dev_x_coors_for_sub_shaped_: (2, 1, 12000, 100)
+        :param dev_y_coors_for_sub_shaped_: (2, 1, 12000, 100)
+        :param dev_pillar_feature_mask_: (2, 1, 12000, 100)  point wise mask
+        :return:
+        """
+        # train reshape, onnx conersion not necessary
+        dev_num_points_per_pillar_= torch.reshape(dev_num_points_per_pillar_, (dev_pillar_x_.shape[0], 1, 12000, 1))
 
-        # Find distance of x, y, and z from cluster center
-        points_mean = features[:, :, :3].sum(dim=1, keepdim=True) / num_voxels.type_as(features).view(-1, 1, 1)
-        f_cluster = features[:, :, :3] - points_mean
+        xyz = torch.cat([dev_pillar_x_, dev_pillar_y_, dev_pillar_z_], dim=1)
+        xyz_mean = xyz.sum(dim=3, keepdim=True) / dev_num_points_per_pillar_
+        xyz_submean = xyz - xyz_mean
+        '''
+        # check if have nan
+        def check_is_nan(input):
+            is_nan = torch.isnan(input)
+            print(torch.sum(torch.isnan(input)))
+            print(input[is_nan][0])
+            exit()
+        check_is_nan(x_submean)
+        '''
+        # ############ work above ###############################
+        # trt is not supporting broadcasting sometimes
+        vx = torch.tensor(self.vx, device="cuda", dtype=torch.float).view(1, 1, 1, 1)
+        vy = torch.tensor(self.vy, device="cuda", dtype=torch.float).view(1, 1, 1, 1)
+        x_offset = torch.tensor(self.x_offset, device="cuda", dtype=torch.float).view(1, 1, 1, 1)
+        y_offset = torch.tensor(self.y_offset, device="cuda", dtype=torch.float).view(1, 1, 1, 1)
+        x_center = dev_x_coors_for_sub_shaped_ * vx + x_offset
+        y_center = dev_y_coors_for_sub_shaped_ * vy + y_offset
 
         # Find distance of x, y, and z from pillar center
-        f_center = features[:, :, :2]
-        f_center[:, :, 0] = f_center[:, :, 0] - (coors[:, 3].float().unsqueeze(1) * self.vx + self.x_offset)
-        f_center[:, :, 1] = f_center[:, :, 1] - (coors[:, 2].float().unsqueeze(1) * self.vy + self.y_offset)
+        x_subcenter = dev_pillar_x_ - x_center
+        y_subcenter = dev_pillar_y_ - y_center
+        features_ls = [xyz, dev_pillar_i_, xyz_submean,
+                       x_subcenter, y_subcenter]
 
-        # Combine together feature decorations
-        features_ls = [features, f_cluster, f_center]
-        if self._with_distance:
-            points_dist = torch.norm(features[:, :, :3], 2, 2, keepdim=True)
-            features_ls.append(points_dist)
-        features = torch.cat(features_ls, dim=-1)
-
-        # The feature decorations were calculated without regard to whether pillar was empty. Need to ensure that
-        # empty pillars remain set to zeros.
-        voxel_count = features.shape[1]
-        mask = get_paddings_indicator(num_voxels, voxel_count, axis=0)
-        mask = torch.unsqueeze(mask, -1).type_as(features)
-        features *= mask
+        features = torch.cat(features_ls, dim=1)
+        features_masked = features.mul(dev_pillar_feature_mask_)
 
         # Forward pass through PFNLayers
         for pfn in self.pfn_layers:
-            features = pfn(features)
+            features_out = pfn(features_masked)
+        # return features_out.squeeze() can not simply squeeze because the batch sometimes is 1!!
+        return torch.squeeze(features_out, 3)
 
-        return features.squeeze()
 
-
-# tensorrt主要是gather index有戏
-class PointPillarsScatter(nn.Module):
+class PointPillarsScatterForCudaImpmentation(nn.Module):
     def __init__(self,
                  output_shape,
                  num_input_features=64):
         """
         Point Pillar's Scatter.
-        Converts learned features from dense tensor to sparse pseudo image. This replaces SECOND's
-        second.pytorch.voxelnet.SparseMiddleExtractor.
+        add batch dimension
         :param output_shape: ([int]: 4). Required output shape of features.
         :param num_input_features: <int>. Number of input features.
         """
@@ -167,8 +186,10 @@ class PointPillarsScatter(nn.Module):
         self.nchannels = num_input_features
 
     def forward(self, voxel_features, coords, batch_size):
-
+        # now the voxel_features is (2, 12000, 64) instead of (xxx, 64)
         # batch_canvas will be the final output.
+        # [2, 64, 12000] -> [2, 12000, 64]
+        voxel_features = voxel_features.permute(0, 2, 1).contiguous()
         batch_canvas = []
         for batch_itt in range(batch_size):
             # Create the canvas for this sample
@@ -178,14 +199,17 @@ class PointPillarsScatter(nn.Module):
             # Only include non-empty pillars
             batch_mask = coords[:, 0] == batch_itt
             this_coords = coords[batch_mask, :]
+            non_empty_pillar_num = this_coords.shape[
+                0]  # one error: orginal pfe final squeeze is not considering batchsize==1
+            # print("nonempty pillar num vs feature dims: ", non_empty_pillar_num, voxel_features.shape)
             indices = this_coords[:, 2] * self.nx + this_coords[:, 3]
             indices = indices.type(torch.long)
-            voxels = voxel_features[batch_mask, :]
-            voxels = voxels.t()
 
+            # take out the batch
+            voxels = voxel_features[batch_itt, :non_empty_pillar_num, :]
+            voxels = voxels.t()
             # Now scatter the blob back to the canvas.
             canvas[:, indices] = voxels
-
             # Append to a list for later stacking.
             batch_canvas.append(canvas)
 
@@ -194,5 +218,4 @@ class PointPillarsScatter(nn.Module):
 
         # Undo the column stacking to final 4-dim tensor
         batch_canvas = batch_canvas.view(batch_size, self.nchannels, self.ny, self.nx)
-
         return batch_canvas
