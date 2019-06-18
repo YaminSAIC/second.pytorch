@@ -295,10 +295,19 @@ def prep_pointcloud(input_dict,
             gt_classes=gt_classes,
             matched_thresholds=matched_thresholds,
             unmatched_thresholds=unmatched_thresholds)
+        '''
         example.update({
             'labels': targets_dict['labels'],
             'reg_targets': targets_dict['bbox_targets'],
             'reg_weights': targets_dict['bbox_outside_weights'],
+        })
+        '''
+        example.update({
+            'labels': targets_dict['labels'],
+            'reg_targets': targets_dict['bbox_targets'],
+            'reg_weights': targets_dict['bbox_outside_weights'],
+            'gt_boxes': gt_boxes,
+            'positive_gt_id': targets_dict['positive_gt_id']
         })
     return example
 

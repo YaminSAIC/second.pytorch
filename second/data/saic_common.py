@@ -1,6 +1,9 @@
 from .kitti_common import *
+from second.core import preprocess as prep
+import numpy as np
 
 
+# put all the bounding boxes to easy
 def add_difficulty_to_annos_saic(info):
     annos = info['annos']
     dims = annos['dimensions']  # lhw format
@@ -15,7 +18,6 @@ def get_label_anno_saic(label_path):
     annotations = {}
     annotations.update({
         'name': [],
-        'alpha': [],
         'bbox': [],
         'dimensions': [],
         'location': [],
@@ -31,7 +33,15 @@ def get_label_anno_saic(label_path):
     annotations['name'] = np.array([x[0] for x in content])
     num_gt = len(annotations['name'])
 
-    # hwl -> lhw
+    #annotations['truncated'] = np.array([float(x[1]) for x in content])
+    #annotations['occluded'] = np.array([int(x[2]) for x in content])
+
+    annotations['alpha'] = np.array([float(x[3]) for x in content])
+
+    # bbox can not be deleted
+    annotations['bbox'] = np.array(
+        [[float(info) for info in x[4:8]] for x in content]).reshape(-1, 4)
+    # dimensions will convert hwl format to standard lhw(camera) format.
     annotations['dimensions'] = np.array(
         [[float(info) for info in x[8:11]] for x in content]).reshape(
             -1, 3)[:, [2, 0, 1]]
@@ -39,10 +49,25 @@ def get_label_anno_saic(label_path):
         [[float(info) for info in x[11:14]] for x in content]).reshape(-1, 3)
     annotations['rotation_y'] = np.array(
         [float(x[14]) for x in content]).reshape(-1)
-
-    index = list(range(num_objects))
+    if len(content) != 0 and len(content[0]) == 16:  # have score
+        annotations['score'] = np.array([float(x[15]) for x in content])
+    else:
+        annotations['score'] = np.zeros((annotations['bbox'].shape[0], ))
+    index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
     annotations['index'] = np.array(index, dtype=np.int32)
     annotations['group_ids'] = np.arange(num_gt, dtype=np.int32)
+    return annotations
+
+
+def get_label_anno_saic_within_range(label_path,
+                                     bv_range):
+    annotations = get_label_anno_saic(label_path)
+    gtbox = np.concatenate([annotations['location'], annotations['dimensions'], annotations['rotation_y']], axis=1)
+    range_filter = prep.filter_gt_box_outside_range(gtbox, bv_range)
+    
+    for key in ["name","alpha","bbox","dimensions","location","rotation_y","score","index","group_ids"]:
+        if annotations[key] is not None:
+            annotations[key] = annotations[key][range_filter]
     return annotations
 
 
@@ -69,8 +94,9 @@ def get_saic_image_info(path,
             label_path = get_label_path(idx, path, training, relative_path)
             if relative_path:
                 label_path = str(root_path / label_path)
+            # actually the label is exactly the same as kitti
+            # the only difference is: unused params are set to 0
             annotations = get_label_anno_saic(label_path)
-
         if annotations is not None:
             image_info['annos'] = annotations
             add_difficulty_to_annos_saic(image_info)

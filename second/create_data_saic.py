@@ -63,23 +63,23 @@ def create_saic_info_file(data_path,
                            save_path=None,
                            create_trainval=False,
                            relative_path=True):
-    train_img_ids = _read_imageset_file("./data/sets/object_3rd/train.txt")
-    val_img_ids = _read_imageset_file("./data/sets/object_3rd/val.txt")
-    # trainval_img_ids = _read_imageset_file("./data/ImageSets/trainval.txt")
-    # test_img_ids = _read_imageset_file("./data/sets/object_3rd/val_all.txt")
+    train_file = pathlib.Path(data_path) / "train.txt"
+    val_file = pathlib.Path(data_path) / "val.txt"
+    train_img_ids = _read_imageset_file(train_file)
+    val_img_ids = _read_imageset_file(val_file)
 
     print("Generate info. this may take several minutes.")
     if save_path is None:
         save_path = pathlib.Path(data_path)
     else:
         save_path = pathlib.Path(save_path)
+
     kitti_infos_train = saic.get_saic_image_info(
         data_path,
         training=True,
         velodyne=True,
         image_ids=train_img_ids,
         relative_path=relative_path)
-
     _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path)
     filename = save_path / 'kitti_infos_train.pkl'
     print(f"Kitti info train file is saved to {filename}")
@@ -98,38 +98,6 @@ def create_saic_info_file(data_path,
     print(f"Kitti info val file is saved to {filename}")
     with open(filename, 'wb') as f:
         pickle.dump(kitti_infos_val, f)
-    """
-    if create_trainval:
-        kitti_infos_trainval = kitti.get_kitti_image_info(
-            data_path,
-            training=True,
-            velodyne=True,
-            calib=True,
-            image_ids=trainval_img_ids,
-            relative_path=relative_path)
-        filename = save_path / 'kitti_infos_trainval.pkl'
-        print(f"Kitti info trainval file is saved to {filename}")
-        with open(filename, 'wb') as f:
-            pickle.dump(kitti_infos_trainval, f)
-    """
-    filename = save_path / 'kitti_infos_trainval.pkl'
-    print(f"Kitti info trainval file is saved to {filename}")
-    with open(filename, 'wb') as f:
-        pickle.dump(kitti_infos_train + kitti_infos_val, f)
-
-    """
-    kitti_infos_test = saic.get_saic_image_info(
-        data_path,
-        training=False,
-        label_info=False,
-        velodyne=True,
-        image_ids=test_img_ids,
-        relative_path=relative_path)
-    filename = save_path / 'kitti_infos_test.pkl'
-    print(f"Kitti info test file is saved to {filename}")
-    with open(filename, 'wb') as f:
-        pickle.dump(kitti_infos_test, f)
-    """
 
 
 def create_groundtruth_database_saic(data_path,
@@ -165,7 +133,6 @@ def create_groundtruth_database_saic(data_path,
     for info in prog_bar(kitti_infos):
         velodyne_path = info['velodyne_path']
         if relative_path:
-            # velodyne_path = str(root_path / velodyne_path) + "_reduced"
             velodyne_path = str(root_path / velodyne_path)
         num_features = 4
         if 'pointcloud_num_features' in info:
@@ -225,6 +192,9 @@ def create_groundtruth_database_saic(data_path,
                     db_path = str(database_save_path.stem + "/" + filename)
                 else:
                     db_path = str(filepath)
+
+                # database is for random database sampling, it is for training
+                # so we dont need bboxes
                 db_info = {
                     "name": names[i],
                     "path": db_path,

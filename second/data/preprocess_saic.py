@@ -209,6 +209,9 @@ def prep_pointcloud_saic(input_dict,
             num_try=100)
         # should remove unrelated objects after noise per object
         gt_boxes = gt_boxes[gt_boxes_mask]
+
+        orginal_gtbox_num = gt_boxes.shape[0]
+
         gt_names = gt_names[gt_boxes_mask]
         if group_ids is not None:
             group_ids = group_ids[gt_boxes_mask]
@@ -216,6 +219,7 @@ def prep_pointcloud_saic(input_dict,
             [class_names.index(n) + 1 for n in gt_names], dtype=np.int32)
 
         gt_boxes, points = prep.random_flip(gt_boxes, points)
+
         gt_boxes, points = prep.global_rotation(
             gt_boxes, points, rotation=global_rotation_noise)
         gt_boxes, points = prep.global_scaling_v2(gt_boxes, points,
@@ -226,7 +230,9 @@ def prep_pointcloud_saic(input_dict,
 
         bv_range = voxel_generator.point_cloud_range[[0, 1, 3, 4]]
         mask = prep.filter_gt_box_outside_range(gt_boxes, bv_range)
+        #!!! remove them
         gt_boxes = gt_boxes[mask]
+
         gt_classes = gt_classes[mask]
         if group_ids is not None:
             group_ids = group_ids[mask]
@@ -234,6 +240,7 @@ def prep_pointcloud_saic(input_dict,
         # limit rad to [-pi, pi]
         gt_boxes[:, 6] = box_np_ops.limit_period(
             gt_boxes[:, 6], offset=0.5, period=2 * np.pi)
+
 
     if shuffle_points:
         # shuffle is a little slow.
@@ -300,8 +307,34 @@ def prep_pointcloud_saic(input_dict,
         bev_map = points_to_bev(points, bev_vxsize, pc_range,
                                 without_reflectivity)
         example["bev_map"] = bev_map
+
     if not training:
+        '''
+        # !!! added by yamin, if not training still remove outsiace
+        gt_boxes = input_dict["gt_boxes"]
+        gt_names = input_dict["gt_names"]
+        difficulty = input_dict["difficulty"]
+        group_ids = None
+        if use_group_id and "group_ids" in input_dict:
+            group_ids = input_dict["group_ids"]
+        bv_range = voxel_generator.point_cloud_range[[0, 1, 3, 4]]
+        num1 = gt_boxes.shape[0]
+        mask = prep.filter_gt_box_outside_range(gt_boxes, bv_range)
+        # !!! remove them
+        gt_boxes = gt_boxes[mask]
+        # gt_classes = gt_classes[mask]
+        num2 = gt_boxes.shape[0]
+        # print(num1, "->", num2)
+        if group_ids is not None:
+            group_ids = group_ids[mask]
+        # !!! added by yamin, if not training still remove outsiace
+
+        example['range_nums'] = [num1, num2]
+        example['gt_boxes'] = gt_boxes
+        '''
+
         return example
+
     if create_targets:
         targets_dict = target_assigner.assign(
             anchors,
@@ -310,10 +343,22 @@ def prep_pointcloud_saic(input_dict,
             gt_classes=gt_classes,
             matched_thresholds=matched_thresholds,
             unmatched_thresholds=unmatched_thresholds)
+
+        # print(gt_boxes.shape[0])
+        '''
         example.update({
             'labels': targets_dict['labels'],
             'reg_targets': targets_dict['bbox_targets'],
             'reg_weights': targets_dict['bbox_outside_weights'],
+        })
+        '''
+        example.update({
+            'labels': targets_dict['labels'],
+            'reg_targets': targets_dict['bbox_targets'],
+            'reg_weights': targets_dict['bbox_outside_weights'],
+            # 'positive_gt_id': targets_dict['positive_gt_id'],
+            # 'gt_boxes': gt_boxes,
+            # 'original_gtbox_num': orginal_gtbox_num
         })
     return example
 
@@ -349,8 +394,6 @@ def _read_and_prep_v9_saic(info, root_path, num_point_features, prep_func):
     input_dict = {
         'points': points,
         'image_idx': image_idx
-        # 'image_path': info['img_path'],
-        # 'pointcloud_num_features': num_point_features,
     }
 
     if 'annos' in info:
@@ -375,7 +418,7 @@ def _read_and_prep_v9_saic(info, root_path, num_point_features, prep_func):
             input_dict['group_ids'] = annos["group_ids"]
     example = prep_func(input_dict=input_dict)
     example["image_idx"] = image_idx
-    # example["image_shape"] = input_dict["image_shape"]
+
     if "anchors_mask" in example:
         example["anchors_mask"] = example["anchors_mask"].astype(np.uint8)
     return example
