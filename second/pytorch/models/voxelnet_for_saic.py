@@ -636,7 +636,9 @@ class VoxelNetForCudaImplementation(nn.Module):
                 box_2d_preds = torch.cat([minxy, maxxy], dim=1)
                 '''
                 # predictions
-                box_2d_preds = torch.zeros(final_box_preds.shape[0], 4)
+                box_2d_preds = torch.zeros(final_box_preds.shape[0], 4,
+                                           dtype=torch.float,
+                                           device='cuda:0')
 
                 predictions_dict = {
                     "bbox": box_2d_preds,
@@ -646,6 +648,7 @@ class VoxelNetForCudaImplementation(nn.Module):
                     "label_preds": label_preds,
                     "image_idx": img_idx,
                 }
+
             else:
                 predictions_dict = {
                     "bbox": None,

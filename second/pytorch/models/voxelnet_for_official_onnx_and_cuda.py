@@ -632,12 +632,12 @@ class VoxelNetForCudaImplementation(nn.Module):
                 }
 
                 print(
-                    "bbox", box_2d_preds.shape,
-                    "box3d_camera", final_box_preds_camera.shape,
-                    "box3d_lidar", final_box_preds.shape,
-                    "scores", final_scores.shape,
-                    "label_preds", label_preds.shape,
-                    "image_idx", img_idx.shape,
+                    "bbox", box_2d_preds.shape, box_2d_preds,
+                    "box3d_camera", final_box_preds_camera.shape, final_box_preds_camera,
+                    "box3d_lidar", final_box_preds.shape, final_box_preds,
+                    "scores", final_scores.shape, final_scores,
+                    "label_preds", label_preds.shape, label_preds,
+                    "image_idx", img_idx.shape, img_idx,
                 )
                 exit()
 
