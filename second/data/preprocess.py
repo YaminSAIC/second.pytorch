@@ -80,6 +80,7 @@ def prep_pointcloud(input_dict,
                     bev_only=False,
                     use_group_id=False,
                     out_dtype=np.float32):
+
     """convert point cloud to voxels, create targets if ground truths 
     exists.
     """
@@ -197,6 +198,11 @@ def prep_pointcloud(input_dict,
             num_try=100)
         # should remove unrelated objects after noise per object
         gt_boxes = gt_boxes[gt_boxes_mask]
+        orginal_gtbox_num = gt_boxes.shape[0]
+
+        # added for difficulty removal
+        difficulty = difficulty[gt_boxes_mask]
+
         gt_names = gt_names[gt_boxes_mask]
         if group_ids is not None:
             group_ids = group_ids[gt_boxes_mask]
@@ -216,6 +222,9 @@ def prep_pointcloud(input_dict,
         mask = prep.filter_gt_box_outside_range(gt_boxes, bv_range)
         gt_boxes = gt_boxes[mask]
         gt_classes = gt_classes[mask]
+        # added for difficulty removal
+        difficulty = difficulty[mask]
+
         if group_ids is not None:
             group_ids = group_ids[mask]
 
@@ -306,8 +315,13 @@ def prep_pointcloud(input_dict,
             'labels': targets_dict['labels'],
             'reg_targets': targets_dict['bbox_targets'],
             'reg_weights': targets_dict['bbox_outside_weights'],
+
+            # the following are only for visualization, comment to train faster
             'gt_boxes': gt_boxes,
-            'positive_gt_id': targets_dict['positive_gt_id']
+            'gt_difficulties': difficulty,
+            'positive_gt_id': targets_dict['positive_gt_id'],
+            'original_gtbox_num': orginal_gtbox_num
+
         })
     return example
 

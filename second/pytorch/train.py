@@ -87,7 +87,7 @@ def train(config_path,
           model_dir,
           result_path=None,
           create_folder=False,
-          display_step=50,
+          display_step=1000,
           summary_step=5,
           pickle_result=True):
     """train a VoxelNet model specified by a config file.

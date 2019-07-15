@@ -39,8 +39,8 @@ model: {
           code_weight: [1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]
         }
       }
-      classification_weight: 1.2  # currently 1.0 1.2 best better than origin for reg but cls is bad
-      localization_weight: 1.2  #
+      classification_weight: 1.0  # 1.0
+      localization_weight: 1.2  # 2.0
     }
     # Outputs
     use_sigmoid_score: true
@@ -80,8 +80,8 @@ model: {
            strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
            offsets: [0.16, -39.52, -0.80] # origin_offset + strides / 2
            rotations: [0, 1.57] # 0, pi/2
-           matched_threshold : 0.65  # 0.6 0.45
-           unmatched_threshold : 0.50
+           matched_threshold : 0.6
+           unmatched_threshold : 0.45
          }
        }
 

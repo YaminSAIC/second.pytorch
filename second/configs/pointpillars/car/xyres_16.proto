@@ -65,7 +65,7 @@ model: {
 
     use_bev: false
     num_point_features: 4
-    without_reflectivity: false
+    without_reflectivity: true
     box_coder: {
       ground_box3d_coder: {
         linear_dim: false

@@ -32,20 +32,15 @@ import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtCore, QtGui
 import sys
+for i in sys.path:
+    print(i)
+sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+sys.path.remove('/home/yamin/.local/lib/python3.7/site-packages')
 import os
 import math
+
+
 import cv2
-
-# Temporarily, using calib_utils function
-avod_root = "/home/saiclei/github/Perception/avod_saic/"
-
-sys.path.insert(0, avod_root)
-sys.path.insert(0, os.path.join(avod_root, 'wavedata'))
-
-# from wavedata.tools.core import calib_utils
-# from wavedata.tools.obj_detection import obj_utils
-
-import argparse
 import sys
 
 
@@ -168,7 +163,8 @@ def showPCInCam(point_cloud, bbox3D_label=None, prediction_label=None):
 def showPC(point_cloud,
            anchor=None,
            bbox3D_label=None,
-           prediction_label=None):
+           prediction_label=None,
+           difficulty=None):
     """
     Show point cloud using pyqtopengl,
     bbox3D_label is a ndarray(n, 7) --> (x, y, z, l, w, h, yaw_angle)
@@ -224,8 +220,21 @@ def showPC(point_cloud,
 
     if prediction_label is not None:
         # mkPen('y', width = 3, stype=QtCore.Qt.DashLine)
-        bbox3D_corners = center_to_corner_box3d_lidar(prediction_label)
-        draw3DBox(view_widget, bbox3D_corners, color=pg.glColor('r'))
+
+        for d in range(3):
+            choosed_difficulty = np.full(difficulty.shape, d)
+            difficulty_index = difficulty == choosed_difficulty
+            difficulty_index = difficulty_index[0]
+            bbox3D_corners = center_to_corner_box3d_lidar(prediction_label[difficulty_index])
+
+            color = None
+            if d == 0:
+                color = 'g'
+            if d == 1:
+                color = 'b'
+            if d == 2:
+                color = 'r'
+            draw3DBox(view_widget, bbox3D_corners, color=pg.glColor(color))
 
     if anchor is not None:
         # mkPen('y', width = 3, stype=QtCore.Qt.DashLine)

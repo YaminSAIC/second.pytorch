@@ -1,31 +1,32 @@
 import time
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
 from google.protobuf import text_format
 from second.builder import target_assigner_builder, voxel_builder
 from second.data.preprocess import merge_second_batch
 from second.protos import pipeline_pb2
 from second.pytorch.builder import box_coder_builder, input_reader_builder
-from matplotlib import pyplot
-from matplotlib.ticker import (AutoMinorLocator, MultipleLocator)
-import pptk
-from mpl_toolkits.mplot3d import Axes3D
+import pickle
 from second.pytorch.visualization_util import showPC
-from tempfile import TemporaryFile
-from second.utils.progress_bar import list_bar as prog_bar
+
+
+saic_config_path = "../configs/pointpillars/car/xyres_16_saic_prep_and_data_batch_1.proto"
+
+kitti_config_path = "../configs/pointpillars/car/xyres_16_only_for_kitti_analysis.proto"
 
 
 def visualize_points_and_boxes(data="saic",
                                show_pc=False,
+                               save_difficulty_hist=False,
+                               show_difficulty_hist=False,
                                show_anchor_assign_hist=False,
                                save_anchor_assign_hist=False,
                                show_gt_filter_out_hist=False):
 
     if data == "saic":
-        config_path = "../configs/pointpillars/car/xyres_16_saic_prep_and_data_batch_1.proto"
+        config_path = saic_config_path
     elif data == "kitti":
-        config_path = "../configs/pointpillars/car/xyres_16_only_for_kitti_analysis.proto"
+        config_path = kitti_config_path
     else:
         raise ValueError('data not supported!')
     config = pipeline_pb2.TrainEvalPipelineConfig()
@@ -95,12 +96,12 @@ def visualize_points_and_boxes(data="saic",
     # get points, anchors, and ground truth box
     ######################
 
-    '''
     data_iter = iter(dataloader)
     assign_hist = np.zeros((1000))
+    difficulty_hist = np.zeros((3))
     gt_remove_num = 0
     for i in range(len(dataset)):
-        print(i)
+        print(i, 'th image')
         try:
             example = next(data_iter)
 
@@ -111,6 +112,7 @@ def visualize_points_and_boxes(data="saic",
         gtboxes = example['gt_boxes']
         positive_gt_id = example['positive_gt_id']
         original_gtbox_num = example['original_gtbox_num']
+        difficulty = example['gt_difficulties']
         # print("gtboxes num: ", gtboxes.shape[0])
         # print("anchor assigned num", positive_gt_id.shape[1])
 
@@ -121,9 +123,9 @@ def visualize_points_and_boxes(data="saic",
             points = voxels.reshape(-1, 4)[:, :3]
             # print(anchors.shape)  # [-1, 7]
             anchors = anchors.reshape((216, 248, 2, 7))
-            anchors = anchors[0:216:40, 0:248:40, :, :].reshape((-1, 7))
-            print(anchors[:10, :])# anchors all have the same lwh, different xyz, theta
-            showPC(points, prediction_label=gtboxes, anchor=anchors)
+            anchors = anchors[0::40, 0::40, :, :].reshape((-1, 7))
+            # print(anchors[:10, :])  # anchors all have the same lwh, different xyz, theta
+            showPC(points, prediction_label=gtboxes, difficulty=difficulty, anchor=anchors)
 
         if show_anchor_assign_hist:
             assign_info = np.zeros((gtboxes.shape[0]))
@@ -139,30 +141,33 @@ def visualize_points_and_boxes(data="saic",
             print(gtboxes_num, "/", original_gtbox_num)
             gt_remove_num += original_gtbox_num - gtboxes_num
 
+        if show_difficulty_hist:
+            difficulty_hist_temp = np.zeros((3))
+            for i in range(3):
+                num = np.sum(difficulty[0, :] == i)
+                print(num)
+                difficulty_hist_temp[i] = num
+                difficulty_hist[i] += num
+            print('difficulty_hist_temp', difficulty_hist_temp)
         print()
 
     if save_anchor_assign_hist:
-        np.save(data + "_hist" + ".npy", assign_hist)
+        np.save(data + "anchor_assign_hist" + ".npy", assign_hist)
         print(assign_hist)
 
+    if save_difficulty_hist:
+        np.save(data + "difficulty_hist" + ".npy", difficulty_hist)
+        print(difficulty_hist)
+
     print(gt_remove_num)
-    
-    '''
-    data_iter = iter(eval_dataloader)
-    num_before_filter_sum = 0
-    num_after_filter_sum = 0
 
-    for i in range(len(dataset)):
-        try:
-            example = next(data_iter)
-
-        except StopIteration:
-            print("end epoch")
-            break
-
-
-visualize_points_and_boxes(data='saic',
-                           show_gt_filter_out_hist=True)
+'''
+visualize_points_and_boxes(data='kitti',
+                           show_pc=False,
+                           show_difficulty_hist=True,
+                           save_difficulty_hist=True
+                           )
+'''
 
 '''
 saic_hist = np.load("./saic_hist.npy")
@@ -176,3 +181,18 @@ plt.xlabel("anchor num")
 plt.ylabel("gt box num")
 plt.show()
 '''
+
+
+def visualize_from_database_file(db_file):
+    with open(info_path, 'rb') as f:
+        db_infos = pickle.load(f)
+
+    for k, v in db_infos.iterms():
+        print(k)
+
+
+visualize_from_database_file("/home/yamin/Desktop/sets/kitti_second/kitti_dbinfos_train.pkl")
+
+
+
+
