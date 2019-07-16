@@ -133,7 +133,7 @@ def train(config_path,
     net = second_builder.build(model_cfg, voxel_generator, target_assigner)
     net.cuda()
     # net_train = torch.nn.DataParallel(net).cuda()
-    print("num_trainable parameters:", len(list(net.parameters())))
+    # print("num_trainable parameters:", len(list(net.parameters())))
     # for n, p in net.named_parameters():
     #     print(n, p.shape)
     ######################
@@ -655,5 +655,12 @@ def evaluate(config_path,
                 pickle.dump(dt_annos, f)
 
 
+def main():
+    train("../configs/pointpillars/car/xyres_16.proto",
+          "/home/yamin/Desktop/kitti_models/car_res16_with_more_crafted_features"
+          )
+
+
 if __name__ == '__main__':
-    fire.Fire()
+    # fire.Fire()
+    main()

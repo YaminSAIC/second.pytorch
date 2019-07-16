@@ -90,7 +90,10 @@ class PillarFeatureNet(nn.Module):
         super().__init__()
         self.name = 'PillarFeatureNet'
         assert len(num_filters) > 0
-        num_input_features += 5
+        # num_input_features += 5
+        # add point num so 5 => 6
+        num_input_features += 6
+
         if with_distance:
             num_input_features += 1
         self._with_distance = with_distance
@@ -125,10 +128,19 @@ class PillarFeatureNet(nn.Module):
         f_center[:, :, 0] = f_center[:, :, 0] - (coors[:, 3].float().unsqueeze(1) * self.vx + self.x_offset)
         f_center[:, :, 1] = f_center[:, :, 1] - (coors[:, 2].float().unsqueeze(1) * self.vy + self.y_offset)
 
+        # coor_distance
+        voxel_x = coors[:, 3].float().unsqueeze(1) * self.vx + self.x_offset
+        voxel_y = coors[:, 2].float().unsqueeze(1) * self.vy + self.y_offset
+
+        # point_num_hist
+        f_voxel_pointnum = num_voxels.type_as(features).view(-1, 1, 1)
+        f_voxel_pointnum = f_voxel_pointnum.repeat(1, 100, 1)
+
         # Combine together feature decorations
-        features_ls = [features, f_cluster, f_center]
+        features_ls = [features, f_cluster, f_center, f_voxel_pointnum]
+        # features_ls = [features, f_cluster, f_center]
         if self._with_distance:
-            points_dist = torch.norm(features[:, :, :3], 2, 2, keepdim=True)
+            points_dist = torch.norm(features[:, :, :2], 2, 2, keepdim=True)
             features_ls.append(points_dist)
         features = torch.cat(features_ls, dim=-1)
 

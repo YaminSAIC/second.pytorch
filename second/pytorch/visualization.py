@@ -8,11 +8,13 @@ from second.protos import pipeline_pb2
 from second.pytorch.builder import box_coder_builder, input_reader_builder
 import pickle
 from second.pytorch.visualization_util import showPC
-
+import matplotlib.pyplot as plt
 
 saic_config_path = "../configs/pointpillars/car/xyres_16_saic_prep_and_data_batch_1.proto"
 
 kitti_config_path = "../configs/pointpillars/car/xyres_16_only_for_kitti_analysis.proto"
+
+kitti_super_resolution_config_path = "../configs/pointpillars/car/xyres_16_only_for_kitti_super_resolution_analysis.proto"
 
 
 def visualize_points_and_boxes(data="saic",
@@ -21,12 +23,13 @@ def visualize_points_and_boxes(data="saic",
                                show_difficulty_hist=False,
                                show_anchor_assign_hist=False,
                                save_anchor_assign_hist=False,
-                               show_gt_filter_out_hist=False):
+                               show_gt_filter_out_hist=False,
+                               show_voxel_point_num_hist=False):
 
     if data == "saic":
         config_path = saic_config_path
     elif data == "kitti":
-        config_path = kitti_config_path
+        config_path = kitti_super_resolution_config_path # kitti_config_path
     else:
         raise ValueError('data not supported!')
     config = pipeline_pb2.TrainEvalPipelineConfig()
@@ -100,6 +103,7 @@ def visualize_points_and_boxes(data="saic",
     assign_hist = np.zeros((1000))
     difficulty_hist = np.zeros((3))
     gt_remove_num = 0
+    voxel_pointnum_hist = np.zeros((30)) # 0 - 19 no empty voxels
     for i in range(len(dataset)):
         print(i, 'th image')
         try:
@@ -113,6 +117,7 @@ def visualize_points_and_boxes(data="saic",
         positive_gt_id = example['positive_gt_id']
         original_gtbox_num = example['original_gtbox_num']
         difficulty = example['gt_difficulties']
+        num_points = example['num_points']
         # print("gtboxes num: ", gtboxes.shape[0])
         # print("anchor assigned num", positive_gt_id.shape[1])
 
@@ -151,6 +156,13 @@ def visualize_points_and_boxes(data="saic",
             print('difficulty_hist_temp', difficulty_hist_temp)
         print()
 
+        if show_voxel_point_num_hist:
+            for i in range(20):
+                points = np.sum(num_points == i)
+                voxel_pointnum_hist[i] += points
+            print(voxel_pointnum_hist)
+
+
     if save_anchor_assign_hist:
         np.save(data + "anchor_assign_hist" + ".npy", assign_hist)
         print(assign_hist)
@@ -163,9 +175,7 @@ def visualize_points_and_boxes(data="saic",
 
 '''
 visualize_points_and_boxes(data='kitti',
-                           show_pc=False,
-                           show_difficulty_hist=True,
-                           save_difficulty_hist=True
+                           show_voxel_point_num_hist=True
                            )
 '''
 
@@ -182,7 +192,33 @@ plt.ylabel("gt box num")
 plt.show()
 '''
 
+point_num_orig = [0., 14774941,  7361896,  4558203,  3157135,  2146113,  1557432,
+  1188584,   774972,   435316,   234178,   152868,   116210,    95289,
+    80588,    69128,    59913,    52470,    45968,    40915,        0,
+        0,        0,        0,        0,        0,        0,        0,
+        0,        0.]
 
+point_num_super_res = [0.0000000e+00, 5.6932793e+07, 1.2980985e+07, 3.1263240e+06, 9.1095900e+05,
+                       4.9794000e+05, 3.1457400e+05, 2.1081800e+05, 1.4784600e+05, 1.0618100e+05,
+                       7.9486000e+04, 5.9190000e+04, 4.5339000e+04, 3.5193000e+04, 2.7403000e+04,
+                       2.1692000e+04, 1.7275000e+04, 1.4087000e+04, 1.1405000e+04, 9.5280000e+03,
+                       0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00,
+                       0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00, 0.0000000e+00]
+
+point_num_orig = np.array(point_num_orig)
+point_num_orig = np.log(point_num_orig)
+
+point_num_super_res = np.array(point_num_super_res)
+point_num_super_res = np.log(point_num_super_res)
+plt.xlabel("points")
+plt.ylabel("log(voxel_num)")
+
+plt.plot(point_num_orig, 'ro', point_num_super_res, 'gx')
+plt.show()
+
+
+
+'''
 def visualize_from_database_file(db_file):
     with open(info_path, 'rb') as f:
         db_infos = pickle.load(f)
@@ -192,7 +228,7 @@ def visualize_from_database_file(db_file):
 
 
 visualize_from_database_file("/home/yamin/Desktop/sets/kitti_second/kitti_dbinfos_train.pkl")
-
+'''
 
 
 

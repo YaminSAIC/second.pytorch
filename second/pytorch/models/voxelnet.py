@@ -496,7 +496,7 @@ class VoxelNet(nn.Module):
                  num_input_features=4,
                  vfe_class_name="VoxelFeatureExtractor",
                  vfe_num_filters=[32, 128],
-                 with_distance=False,
+                 with_distance=True,
                  middle_class_name="SparseMiddleExtractor",
                  middle_num_filters_d1=[64],
                  middle_num_filters_d2=[64, 64],
